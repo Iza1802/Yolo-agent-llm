@@ -151,7 +151,7 @@
     ══════════════════════════════ */
     .app {
       display: grid;
-      grid-template-columns: 1fr 360px;
+      grid-template-columns: 1fr 340px 260px;
       grid-template-rows: 1fr;
       height: 100vh;
       padding-top: 56px;
@@ -566,6 +566,122 @@
        MISC
     ══════════════════════════════ */
     .divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+
+    /* ══════════════════════════════
+       DATA COLUMN (Scraping)
+    ══════════════════════════════ */
+    .data-col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .data-col .panel-hdr { border-bottom: 1px solid var(--border); }
+
+    .data-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Info card (clima / cotações) ── */
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+
+    .info-card-title {
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .info-card-title-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .info-row:last-child { border-bottom: none; }
+
+    .info-label { color: var(--text-dim); }
+
+    .info-value {
+      font-family: var(--mono);
+      color: var(--text);
+      font-size: 11.5px;
+    }
+
+    .info-value.green { color: var(--green); }
+    .info-value.amber { color: var(--amber); }
+    .info-value.cyan  { color: var(--cyan);  }
+
+    /* ── News list ── */
+    .news-list {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .news-item {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+
+    .news-item:last-child { border-bottom: none; }
+    .news-item:hover { background: var(--surface3); }
+
+    .news-title {
+      font-size: 11.5px;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 3px;
+    }
+
+    .news-title a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .news-title a:hover { color: var(--accent); }
+
+    .news-date {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      color: var(--text-faint);
+    }
+
+    .data-placeholder {
+      color: var(--text-faint);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-align: center;
+      padding: 20px 0;
+    }
   </style>
 </head>
 <body>
@@ -679,6 +795,46 @@
     </div>
   </div><!-- /right-col -->
 
+  <!-- DATA COL: scraping -->
+  <div class="data-col">
+    <div class="panel-hdr">
+      <span class="panel-title">Dados do Campo</span>
+      <span class="panel-meta" id="scraping-ts">—</span>
+    </div>
+    <div class="data-scroll">
+
+      <!-- Clima -->
+      <div class="info-card" id="card-clima">
+        <div class="info-card-title">
+          <span class="info-card-title-dot" style="background:var(--cyan)"></span>
+          Clima
+        </div>
+        <div class="data-placeholder">carregando...</div>
+      </div>
+
+      <!-- Cotações -->
+      <div class="info-card" id="card-cotacoes">
+        <div class="info-card-title">
+          <span class="info-card-title-dot" style="background:var(--green)"></span>
+          Cotações CBOT
+        </div>
+        <div class="data-placeholder">carregando...</div>
+      </div>
+
+      <!-- Notícias -->
+      <div>
+        <div class="info-card-title" style="padding:0 2px 6px">
+          <span class="info-card-title-dot" style="background:var(--amber)"></span>
+          Notícias Recentes
+        </div>
+        <div class="news-list" id="news-list">
+          <div class="data-placeholder">carregando...</div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /data-col -->
+
 </div><!-- /app -->
 
 <script>
@@ -757,24 +913,53 @@ const LABEL_CLS = {
 
 function renderEvents(events) {
   const body = document.getElementById('events-body');
+  body.innerHTML = '';
+
   if (!events || events.length === 0) {
-    body.innerHTML = '<span class="no-events-msg">aguardando detecções...</span>';
+    const msg = document.createElement('span');
+    msg.className = 'no-events-msg';
+    msg.textContent = 'aguardando detecções...';
+    body.appendChild(msg);
     return;
   }
-  body.innerHTML = events.slice(0, 40).map(e => {
-    const cls  = LABEL_CLS[e.label] || 'default';
-    const pct  = (e.confidence * 100).toFixed(0);
-    const time = e.event_time ? e.event_time.split(' ').pop() || e.event_time : '—';
-    return `
-      <div class="event-card">
-        <div class="ev-label ${cls}">${e.label}</div>
-        <div class="ev-time">${time}</div>
-        <div class="ev-conf-row">
-          <div class="ev-bar"><div class="ev-fill" style="width:${pct}%"></div></div>
-          <div class="ev-pct">${pct}%</div>
-        </div>
-      </div>`;
-  }).join('');
+
+  events.slice(0, 40).forEach(e => {
+    const cls = LABEL_CLS[e.label] || 'default';
+    const pct = (e.confidence * 100).toFixed(0);
+    const time = e.event_time ? (e.event_time.split(' ').pop() || e.event_time) : '—';
+
+    const card = document.createElement('div');
+    card.className = 'event-card';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = `ev-label ${cls}`;
+    labelEl.textContent = e.label;        // textContent — imune a XSS
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'ev-time';
+    timeEl.textContent = time;            // textContent — imune a XSS
+
+    const confRow = document.createElement('div');
+    confRow.className = 'ev-conf-row';
+
+    const bar = document.createElement('div');
+    bar.className = 'ev-bar';
+    const fill = document.createElement('div');
+    fill.className = 'ev-fill';
+    fill.style.width = pct + '%';
+    bar.appendChild(fill);
+
+    const pctEl = document.createElement('div');
+    pctEl.className = 'ev-pct';
+    pctEl.textContent = pct + '%';
+
+    confRow.appendChild(bar);
+    confRow.appendChild(pctEl);
+    card.appendChild(labelEl);
+    card.appendChild(timeEl);
+    card.appendChild(confRow);
+    body.appendChild(card);
+  });
 }
 
 /* ══════════════════════════════
@@ -886,10 +1071,92 @@ function quickAsk(q) {
 }
 
 /* ══════════════════════════════
+   SCRAPING DATA
+══════════════════════════════ */
+const WEATHER_CODES = {
+  0:'Céu limpo', 1:'Principalmente limpo', 2:'Parcialmente nublado', 3:'Nublado',
+  45:'Neblina', 48:'Neblina com geada', 51:'Garoa leve', 53:'Garoa moderada', 55:'Garoa intensa',
+  61:'Chuva leve', 63:'Chuva moderada', 65:'Chuva intensa',
+  71:'Neve leve', 73:'Neve moderada', 75:'Neve intensa',
+  80:'Pancadas leves', 81:'Pancadas moderadas', 82:'Pancadas fortes',
+  95:'Trovoadas', 99:'Trovoadas com granizo'
+};
+
+function renderClima(data) {
+  const el = document.getElementById('card-clima');
+  if (data.erro) {
+    el.querySelector('.data-placeholder') && (el.innerHTML = `<div class="info-card-title"><span class="info-card-title-dot" style="background:var(--cyan)"></span>Clima</div><div class="data-placeholder">indisponível</div>`);
+    return;
+  }
+  const desc = WEATHER_CODES[data.codigo_tempo] || `código ${data.codigo_tempo}`;
+  el.innerHTML = `
+    <div class="info-card-title">
+      <span class="info-card-title-dot" style="background:var(--cyan)"></span>
+      Clima · <span style="color:var(--text-faint);font-size:9px">${data.fonte || 'Open-Meteo'}</span>
+    </div>
+    <div class="info-row"><span class="info-label">Temperatura</span><span class="info-value cyan">${data.temperatura_c ?? '—'}°C</span></div>
+    <div class="info-row"><span class="info-label">Umidade</span><span class="info-value">${data.umidade_pct ?? '—'}%</span></div>
+    <div class="info-row"><span class="info-label">Prob. chuva</span><span class="info-value ${(data.prob_chuva_pct ?? 0) > 60 ? 'amber' : ''}">${data.prob_chuva_pct ?? '—'}%</span></div>
+    <div class="info-row"><span class="info-label">Vento</span><span class="info-value">${data.vento_kmh ?? '—'} km/h</span></div>
+    <div class="info-row"><span class="info-label">Condição</span><span class="info-value" style="font-size:10px">${desc}</span></div>`;
+}
+
+function renderCotacoes(data) {
+  const el = document.getElementById('card-cotacoes');
+  if (data.erro) {
+    el.innerHTML = `<div class="info-card-title"><span class="info-card-title-dot" style="background:var(--green)"></span>Cotações CBOT</div><div class="data-placeholder">indisponível</div>`;
+    return;
+  }
+  const precos = data.precos || {};
+  const rows = Object.entries(precos).map(([nome, info]) => {
+    if (info.erro) return `<div class="info-row"><span class="info-label">${nome}</span><span class="info-value" style="color:var(--red-dim)">—</span></div>`;
+    return `<div class="info-row">
+      <span class="info-label">${nome[0].toUpperCase()+nome.slice(1)}</span>
+      <span class="info-value green">${info.preco} <span style="color:var(--text-faint);font-size:9px">${info.moeda}/bu</span></span>
+    </div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="info-card-title">
+      <span class="info-card-title-dot" style="background:var(--green)"></span>
+      Cotações CBOT · <span style="color:var(--text-faint);font-size:9px">Yahoo Finance</span>
+    </div>
+    ${rows || '<div class="data-placeholder">sem dados</div>'}
+    <div class="info-row" style="margin-top:4px"><span class="info-label" style="font-size:10px;color:var(--text-faint)">${data.nota || ''}</span></div>`;
+}
+
+function renderNoticias(data) {
+  const el = document.getElementById('news-list');
+  if (data.erro || !data.noticias || data.noticias.length === 0) {
+    el.innerHTML = '<div class="data-placeholder">indisponível</div>';
+    return;
+  }
+  el.innerHTML = data.noticias.map(n => `
+    <div class="news-item">
+      <div class="news-title"><a href="${n.link}" target="_blank" rel="noopener">${n.titulo}</a></div>
+      <div class="news-date">${n.data ? n.data.slice(0,22) : ''}</div>
+    </div>`).join('');
+}
+
+async function pollScrapingData() {
+  try {
+    const res = await fetch('/scraping/data');
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.clima)    renderClima(d.clima);
+    if (d.cotacoes) renderCotacoes(d.cotacoes);
+    if (d.noticias) renderNoticias(d.noticias);
+    const ts = d.clima?.coletado_em || d.cotacoes?.coletado_em;
+    if (ts) document.getElementById('scraping-ts').textContent = ts.slice(11,19);
+  } catch(_) {}
+}
+
+/* ══════════════════════════════
    INIT
 ══════════════════════════════ */
 pollStatus();
 setInterval(pollStatus, 5000);
+pollScrapingData();
+setInterval(pollScrapingData, 60000);
 </script>
 </body>
 </html>

@@ -31,6 +31,8 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Dependências principais incluem `beautifulsoup4` e `lxml` (usadas pelo serviço de scraping para parse do RSS do Canal Rural).
+
 ---
 
 ## 3. Instalar e configurar o Ollama
@@ -88,6 +90,10 @@ python -m uvicorn app:app --reload
 - Status agente: http://127.0.0.1:8000/agent/status
 - Eventos: http://127.0.0.1:8000/events
 - Status Ollama: http://127.0.0.1:8000/ollama/status
+- Dados de scraping: http://127.0.0.1:8000/scraping/data
+- Clima: http://127.0.0.1:8000/scraping/weather
+- Cotações: http://127.0.0.1:8000/scraping/commodities
+- Notícias: http://127.0.0.1:8000/scraping/news
 
 ---
 
@@ -104,11 +110,23 @@ agrovision_ia/
 │   ├── event_repository.py      # banco SQLite
 │   ├── video_monitor.py         # câmera, YOLO, stream MJPEG
 │   ├── ollama_client.py         # comunicação com Ollama
-│   └── monitoring_agent.py      # agente: perfil, contexto, histórico
+│   ├── claude_client.py         # comunicação com Claude API (Anthropic)
+│   ├── monitoring_agent.py      # agente: perfil, contexto, histórico
+│   └── scraping_service.py      # clima, cotações CBOT e notícias do agro
 ├── templates/
 │   └── index.html               # dashboard
 └── static/
     └── captures/                # imagens salvas pelo YOLO
+```
+
+---
+
+## Variáveis de ambiente opcionais (scraping)
+
+```
+WEATHER_LAT=-15.77       # latitude para previsão do tempo (padrão: Brasília)
+WEATHER_LON=-47.92       # longitude para previsão do tempo
+SCRAPING_CACHE_TTL=600   # tempo de cache em segundos (padrão: 10 min)
 ```
 
 ---

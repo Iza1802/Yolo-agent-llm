@@ -1,21 +1,30 @@
-import httpx
 import json
+import logging
+from urllib.parse import urljoin
+
+import httpx
+
 from services.config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT, OLLAMA_KEEP_ALIVE
 
+logger = logging.getLogger(__name__)
 
-def warmup_model():
+# Base URL derivada da URL de chat — mais robusto do que string.replace()
+_OLLAMA_BASE = OLLAMA_URL.split("/api/")[0]
+
+
+def warmup_model() -> None:
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": "ping"}],
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+    }
     try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "messages": [{"role": "user", "content": "ping"}],
-            "stream": False,
-            "keep_alive": OLLAMA_KEEP_ALIVE,
-        }
         with httpx.Client(timeout=30) as client:
             client.post(OLLAMA_URL, json=payload)
-        print(f"[OLLAMA] Modelo '{OLLAMA_MODEL}' aquecido com sucesso.")
-    except Exception as e:
-        print(f"[OLLAMA] Aviso: warmup falhou ({e}). O modelo será carregado na primeira pergunta.")
+        logger.info("[OLLAMA] Modelo '%s' aquecido.", OLLAMA_MODEL)
+    except Exception as exc:
+        logger.warning("[OLLAMA] Warmup falhou (%s). Modelo carregará na primeira pergunta.", exc)
 
 
 def chat_stream(messages: list):
@@ -33,21 +42,29 @@ def chat_stream(messages: list):
                     continue
                 try:
                     data = json.loads(line)
-                    token = data.get("message", {}).get("content", "")
-                    if token:
-                        yield token
-                    if data.get("done"):
-                        break
                 except json.JSONDecodeError:
+                    logger.debug("[OLLAMA] Linha não-JSON ignorada: %r", line[:80])
                     continue
+
+                if not isinstance(data, dict):
+                    continue
+                token = data.get("message", {}).get("content", "")
+                if token:
+                    yield token
+                if data.get("done"):
+                    break
 
 
 def check_ollama() -> dict:
+    tags_url = urljoin(_OLLAMA_BASE + "/", "api/tags")
     try:
-        tags_url = OLLAMA_URL.replace("/api/chat", "/api/tags")
         with httpx.Client(timeout=5) as client:
-            r = client.get(tags_url)
-            models = [m["name"] for m in r.json().get("models", [])]
-            return {"available": True, "models": models, "active_model": OLLAMA_MODEL}
-    except Exception as e:
-        return {"available": False, "error": str(e), "active_model": OLLAMA_MODEL}
+            response = client.get(tags_url)
+            response.raise_for_status()
+            data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Resposta inesperada da API Ollama")
+        models = [m["name"] for m in data.get("models", [])]
+        return {"available": True, "models": models, "active_model": OLLAMA_MODEL}
+    except Exception as exc:
+        return {"available": False, "error": str(exc), "active_model": OLLAMA_MODEL}

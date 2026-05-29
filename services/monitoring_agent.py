@@ -19,14 +19,16 @@ AGENT_PROFILE = AgentProfile(
 )
 
 SYSTEM_PROMPT = (
-    f"Você é o {AGENT_PROFILE.name}, um agente de {AGENT_PROFILE.role}. "
-    f"Objetivo: {AGENT_PROFILE.goal} "
-    "Trate os dados como monitoramento operacional autorizado de ambiente real. "
-    "Responda em português do Brasil, de forma direta e útil. "
-    "Use os eventos fornecidos como fonte principal. "
-    "Não invente dados que não aparecem no contexto. "
-    "Não tente identificar pessoas; fale apenas sobre eventos, riscos e próximas ações. "
-    "Quando fizer sentido, organize a resposta em: Leitura, Risco e Recomendação."
+    f"Você é o {AGENT_PROFILE.name}, um agente de {AGENT_PROFILE.role}.\n"
+    f"Objetivo: {AGENT_PROFILE.goal}\n"
+    "Trate os dados como monitoramento operacional autorizado de ambiente real.\n"
+    "Responda em português do Brasil, de forma direta e útil.\n"
+    "Use os eventos fornecidos como fonte principal.\n"
+    "Não invente dados que não aparecem no contexto.\n"
+    "Não tente identificar pessoas; fale apenas sobre eventos, riscos e próximas ações.\n"
+    "Quando fizer sentido, organize a resposta em: Leitura, Risco e Recomendação.\n"
+    "Se dados climáticos, cotações ou notícias do setor estiverem disponíveis no contexto, "
+    "use-os para enriquecer a análise."
 )
 
 
@@ -47,33 +49,75 @@ def build_event_context(events: list) -> str:
     )
 
     return (
-        f"Contexto operacional para o agente:\n"
+        f"Contexto operacional:\n"
         f"- Eventos considerados: {total}\n"
         f"- Evento mais recente: {latest['label']} em {latest['event_time']}\n"
-        f"- Distribuição recente: {dist_str}\n"
+        f"- Distribuição: {dist_str}\n"
         f"- Confiança média: {avg_conf:.2f}\n"
-        f"Eventos recentes:\n{lines}"
+        f"Eventos:\n{lines}"
     )
+
+
+def _build_scraping_context(scraping_data: dict | None) -> str:
+    if not scraping_data:
+        return ""
+
+    parts: list[str] = []
+
+    clima = scraping_data.get("clima", {})
+    if "erro" not in clima and clima.get("temperatura_c") is not None:
+        parts.append(
+            f"Clima atual: {clima['temperatura_c']}°C, "
+            f"umidade {clima.get('umidade_pct')}%, "
+            f"vento {clima.get('vento_kmh')} km/h, "
+            f"prob. chuva {clima.get('prob_chuva_pct')}%."
+        )
+
+    cotacoes = scraping_data.get("cotacoes", {})
+    soja = cotacoes.get("precos", {}).get("soja")
+    if soja and isinstance(soja, dict):
+        parts.append(
+            f"Cotação da soja (CEPEA): R$ {soja['preco']:.2f}/saca 60kg "
+            f"(data: {soja.get('data', 'N/D')})."
+        )
+
+    noticias = scraping_data.get("noticias", {}).get("noticias", [])
+    if noticias:
+        titulos = "; ".join(n["titulo"] for n in noticias[:3] if n.get("titulo"))
+        parts.append(f"Notícias recentes do setor: {titulos}.")
+
+    if not parts:
+        return ""
+
+    return "Dados externos de contexto:\n" + "\n".join(f"- {p}" for p in parts)
 
 
 def normalize_history(history: list) -> list:
     valid = []
     for msg in history:
         if isinstance(msg, dict):
-            role = msg.get("role", "")
-            content = msg.get("content", "")
+            role, content = msg.get("role", ""), msg.get("content", "")
         else:
-            role = getattr(msg, "role", "")
-            content = getattr(msg, "content", "")
+            role, content = getattr(msg, "role", ""), getattr(msg, "content", "")
         if role in ("user", "assistant") and content:
             valid.append({"role": role, "content": content})
     return valid[-MAX_HISTORY_MESSAGES:]
 
 
-def build_agent_messages(question: str, history: list, events: list) -> list:
+def build_agent_messages(
+    question: str,
+    history: list,
+    events: list,
+    scraping_data: dict | None = None,
+) -> list:
+    context_parts = [build_event_context(events)]
+    scraping_ctx = _build_scraping_context(scraping_data)
+    if scraping_ctx:
+        context_parts.append(scraping_ctx)
+
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": build_event_context(events)},
+        {"role": "system", "content": "\n\n".join(context_parts)},
         *normalize_history(history),
         {"role": "user", "content": question},
     ]
